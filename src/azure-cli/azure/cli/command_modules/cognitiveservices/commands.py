@@ -5,7 +5,9 @@
 
 from azure.cli.core.commands import CliCommandType
 from azure.cli.command_modules.cognitiveservices._client_factory import cf_accounts, cf_resource_skus, \
-    cf_deleted_accounts, cf_deployments, cf_commitment_plans, cf_commitment_tiers, cf_models, cf_usages
+    cf_deleted_accounts, cf_deployments, cf_commitment_plans, cf_commitment_tiers, cf_models, cf_usages, \
+    cf_account_connections, cf_projects, cf_project_connections, cf_account_capability_hosts, \
+    cf_project_capability_hosts
 
 
 def load_command_table(self, _):
@@ -37,6 +39,28 @@ def load_command_table(self, _):
     usages_type = CliCommandType(
         operations_tmpl='azure.mgmt.cognitiveservices.operations#UsagesOperations.{}',
         client_factory=cf_usages
+    )
+
+    projects_type = CliCommandType(
+        operations_tmpl='azure.mgmt.cognitiveservices.operations#ProjectsOperations.{}',
+        client_factory=cf_projects
+    )
+
+    account_connections_type = CliCommandType(
+        operations_tmpl='azure.mgmt.cognitiveservices.operations#AccountConnectionsOperations.{}',
+        client_factory=cf_account_connections
+    )
+    account_capability_hosts_type = CliCommandType(
+        operations_tmpl='azure.mgmt.cognitiveservices.operations#AccountCapabilityHostsOperations.{}',
+        client_factory=cf_account_capability_hosts
+    )
+    project_capability_hosts_type = CliCommandType(
+        operations_tmpl='azure.mgmt.cognitiveservices.operations#ProjectCapabilityHostsOperations.{}',
+        client_factory=cf_project_capability_hosts
+    )
+    project_connections_type = CliCommandType(
+        operations_tmpl='azure.mgmt.cognitiveservices.operations#ProjectConnectionsOperations.{}',
+        client_factory=cf_project_connections
     )
 
     with self.command_group('cognitiveservices account', accounts_type, client_factory=cf_accounts) as g:
@@ -103,3 +127,40 @@ def load_command_table(self, _):
 
     with self.command_group('cognitiveservices usage', usages_type) as g:
         g.command('list', 'list')
+
+    with self.command_group('cognitiveservices account capability-host', account_capability_hosts_type, client_factory=cf_account_capability_hosts) as g:
+        g.show_command('show', 'get')
+        g.command('delete', 'begin_delete', supports_no_wait=True)
+        g.custom_command('create', 'account_capability_host_create', supports_no_wait=True)
+        
+    with self.command_group(
+            'cognitiveservices account project', projects_type,
+            client_factory=cf_projects) as g:
+        g.custom_command('create', 'project_create')
+        g.command('delete', 'begin_delete')
+        g.show_command('show', 'get')
+        g.command('list', 'list')
+        g.command('update', 'begin_update')
+
+    with self.command_group('cognitiveservices account project capability-host', project_capability_hosts_type, client_factory=cf_project_capability_hosts) as g:
+        g.show_command('show', 'get')
+        g.command('delete', 'begin_delete')
+        g.custom_command('create', 'project_capability_host_create')
+
+    with self.command_group(
+            'cognitiveservices account project connection', project_connections_type,
+            client_factory=cf_project_connections) as g:
+        g.command('create', 'begin_create')
+        g.command('delete', 'begin_delete')
+        g.show_command('show', 'get')
+        g.command('list', 'list')
+        g.command('update', 'begin_update')
+
+    with self.command_group(
+            'cognitiveservices account connection', account_connections_type,
+            client_factory=cf_account_connections) as g:
+        g.command('create', 'create')
+        g.command('delete', 'delete')
+        g.show_command('show', 'get')
+        g.command('list', 'list')
+        g.command('update', 'update')

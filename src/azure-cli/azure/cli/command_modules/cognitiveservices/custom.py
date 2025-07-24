@@ -4,16 +4,22 @@
 # --------------------------------------------------------------------------------------------
 
 import json
+from typing import IO, Any, AnyStr, Dict, List, Optional, Union
 
 from knack.util import CLIError
 from knack.log import get_logger
 
+from os import PathLike
+
+from azure.cli.core.azclierror import FileOperationError
 from azure.mgmt.cognitiveservices.models import Account as CognitiveServicesAccount, Sku, \
     VirtualNetworkRule, IpRule, NetworkRuleSet, NetworkRuleAction, \
     AccountProperties as CognitiveServicesAccountProperties, ApiProperties as CognitiveServicesAccountApiProperties, \
     Identity, ResourceIdentityType as IdentityType, \
     Deployment, DeploymentModel, DeploymentScaleSettings, DeploymentProperties, \
-    CommitmentPlan, CommitmentPlanProperties, CommitmentPeriod
+    CommitmentPlan, CommitmentPlanProperties, CommitmentPeriod, CapabilityHost, CapabilityHostProperties,\
+    Project, ProjectProperties
+    
 from azure.cli.command_modules.cognitiveservices._client_factory import cf_accounts, cf_resource_skus
 
 logger = get_logger(__name__)
@@ -293,3 +299,202 @@ def commitment_plan_create_or_update(
         plan.properties.next.count = next_count
     plan.properties.auto_renew = auto_renew
     return client.create_or_update(resource_group_name, account_name, commitment_plan_name, plan)
+
+
+def _load_capability_host_from_file(
+    source: Union[str, PathLike, IO[AnyStr]],
+    params_override: Optional[List[Dict[str, Any]]] = None):
+    """
+    Load a capability host from a JSON file or string.
+    """
+    from azure.ai.ml.entities._load_functions import load_capability_host
+    cogsvc_capability_host = None
+    try:
+        ml_capability_host = load_capability_host(
+            source=source,
+            params_override=params_override,
+        )
+        # The azure.ai.ml._workspace._ai_workspaces.capability_host.CapabilityHost type maps to the
+        # azure.mgmt.cognitiveservices.models.CapabilityHostProperties type.
+        # We need to convert it to the latter type before sending it to the API.
+        cogsvc_capability_host = CapabilityHost(properties=CapabilityHostProperties(
+            description=ml_capability_host.description,
+            capability_host_kind=ml_capability_host.capability_host_kind,
+            vector_store_connections=ml_capability_host.vector_store_connections,
+            storage_connections=ml_capability_host.storage_connections,
+            ai_services_connections=ml_capability_host.ai_services_connections,
+        ))
+    except Exception as e:
+        raise FileOperationError(f"Failed to load capability host from {source}: {e}",
+                                 recommendation="Check the file path and format.")
+    return cogsvc_capability_host    
+
+def _populate_capability_host(
+        description=None, 
+        capability_host_kind='Agents',
+        vector_store_connections=None,
+        storage_connections=None,
+        ai_services_connections=None,
+        file=None,
+
+) -> CapabilityHost:
+    ch_properties = CapabilityHostProperties()
+    ch_properties.description = description
+    ch_properties.capability_host_kind = capability_host_kind
+    ch_properties.vector_store_connections = vector_store_connections
+    ch_properties.storage_connections = storage_connections
+    ch_properties.ai_services_connections = ai_services_connections
+    capability_host = CapabilityHost(properties=ch_properties)
+    if file is not None:
+        params_override = [dict([x]) for x in capability_host.properties.as_dict()] 
+        capability_host = _load_capability_host_from_file(
+            source=file,
+            params_override=params_override,
+        )
+    return capability_host
+
+def _sdk_create_capability_host(
+    client,
+    resource_group_name: str,
+    account_name: str,
+    project_name: Optional[str],
+    capability_host_name: str,
+    capability_host: CapabilityHost,
+    no_wait: bool = False,
+):
+    args = [resource_group_name, account_name]
+    if project_name:
+        args.append(project_name)
+    args.append(capability_host_name)
+    from azure.cli.core.util import sdk_no_wait
+    return sdk_no_wait(no_wait,
+                       client.begin_create_or_update,
+                       *args,
+                       capability_host)
+
+def _create_capability_host(
+        client,
+        resource_group_name,
+        account_name,
+        capability_host_name,
+        project_name=None,  # Optional for account-level capability hosts
+        description=None,
+        capability_host_kind='Agents',
+        vector_store_connections=None,
+        storage_connections=None,
+        ai_services_connections=None,
+        file=None,
+        no_wait=False,
+):
+    capability_host = _populate_capability_host(
+    description=description,
+    capability_host_kind=capability_host_kind,
+    vector_store_connections=vector_store_connections,
+    storage_connections=storage_connections,
+    ai_services_connections=ai_services_connections,
+    file=file,
+    )
+    return _sdk_create_capability_host(
+        client,
+        resource_group_name,
+        account_name,
+        project_name,  # project_name is None for account-level capability hosts
+        capability_host_name,
+        capability_host,
+        no_wait=no_wait,
+    )
+
+def account_capability_host_create(
+        client,
+        resource_group_name,
+        account_name,
+        capability_host_name,
+        description=None,
+        capability_host_kind='Agents',
+        vector_store_connections=None,
+        storage_connections=None,
+        ai_services_connections=None,
+        file=None,
+        no_wait=False,
+):
+    """
+    Create a capability host for Azure Cognitive Services account.
+    """
+    return _create_capability_host(
+        client,
+        resource_group_name,
+        account_name,
+        capability_host_name,
+        description=description,
+        capability_host_kind=capability_host_kind,
+        vector_store_connections=vector_store_connections,
+        storage_connections=storage_connections,
+        ai_services_connections=ai_services_connections,
+        file=file,
+        no_wait=no_wait,
+    )
+
+def project_capability_host_create(
+        client,
+        resource_group_name,
+        account_name,
+        project_name,
+        capability_host_name,
+        description=None,
+        capability_host_kind='Agents',
+        vector_store_connections=None,
+        storage_connections=None,
+        ai_services_connections=None,
+        file=None,
+        no_wait=False,
+):
+    """
+    Create a capability host for Azure Cognitive Services account or project.
+    """
+    return _create_capability_host(
+        client,
+        resource_group_name,
+        account_name,
+        capability_host_name,
+        project_name=project_name,
+        description=description,
+        capability_host_kind=capability_host_kind,
+        vector_store_connections=vector_store_connections,
+        storage_connections=storage_connections,
+        ai_services_connections=ai_services_connections,
+        file=file,
+        no_wait=no_wait,
+    )
+
+def project_create(
+        client,
+        resource_group_name,
+        account_name,
+        project_name,
+        location,
+        assign_identity=False,
+        identity_type=None,
+        user_assigned_identity=None,
+        description=None,
+        display_name=None,
+        no_wait=False,
+):
+    """
+    Create a project for Azure Cognitive Services account.
+    """
+    project = Project(properties=ProjectProperties())
+    project.properties.description = description
+    project.properties.display_name = display_name
+    project.location = location
+    # If the user specifies a User Assigned Identity, we need to set the identity type accordingly.
+    if identity_type is None:
+        if user_assigned_identity is not None:
+            if assign_identity:
+                project.identity = Identity(type=IdentityType.SYSTEM_ASSIGNED_USER_ASSIGNED,
+                                            user_assigned_identities={user_assigned_identity: {}})
+            else:
+                project.identity = Identity(type=IdentityType.USER_ASSIGNED,
+                                            user_assigned_identities={user_assigned_identity: {}})
+        else:
+            project.identity = Identity(type=IdentityType.SYSTEM_ASSIGNED)
+    return client.begin_create(resource_group_name, account_name, project_name, project, polling=no_wait)

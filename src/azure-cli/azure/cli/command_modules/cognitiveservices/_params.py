@@ -21,7 +21,8 @@ from azure.cli.core.decorators import Completer
 
 from azure.cli.command_modules.cognitiveservices._client_factory import cf_resource_skus
 
-from azure.mgmt.cognitiveservices.models import KeyName, DeploymentScaleType, HostingModel
+from azure.mgmt.cognitiveservices.models import KeyName, DeploymentScaleType, HostingModel, CapabilityHostKind, \
+    ResourceIdentityType as IdentityType
 
 logger = get_logger(__name__)
 name_arg_type = CLIArgumentType(options_list=['--name', '-n'], metavar='NAME')
@@ -120,6 +121,18 @@ def _validate_subnet(cmd, namespace):
             child_type_1='subnets',
             child_name_1=subnet)
 
+def _validate_user_assigned_identity(cmd, namespace):
+    from azure.mgmt.core.tools import resource_id, is_valid_resource_id
+    from azure.cli.core.commands.client_factory import get_subscription_id
+    if namespace.user_assigned_identity:
+        identity = namespace.user_assigned_identity
+        if not is_valid_resource_id(identity):
+            namespace.user_assigned_identity = resource_id(
+                subscription=get_subscription_id(cmd.cli_ctx),
+                resource_group=namespace.resource_group_name,
+                namespace='Microsoft.ManagedIdentity',
+                type='userAssignedIdentities',
+                name=identity)
 
 @Completer
 def sku_name_completer(cmd, prefix, namespace, **kwargs):  # pylint: disable=unused-argument
@@ -203,3 +216,57 @@ def load_arguments(self, _):
     with self.argument_context('cognitiveservices account commitment-plan', arg_group='Next CommitmentPeriod') as c:
         c.argument('next_count', help='Cognitive Services account commitment plan next commitment period count.')
         c.argument('next_tier', help='Cognitive Services account commitment plan next commitment period tier.')
+
+    with self.argument_context('cognitiveservices account project') as c:
+        c.argument('project_name', help='Cognitive Services account project name')
+        c.argument('location', arg_type=get_location_type(self.cli_ctx),
+                   completer=location_completer)
+
+    with self.argument_context('cognitiveservices account project', arg_group='Project Identity') as c:
+        c.argument('assign_identity', 
+                   help='Generate and assign an Azure Active Directory Identity for this project.  If used with --user-assigned-identity, this will assign a system assigned identity as well.')
+        c.argument('user_assigned_identity',
+                   help='User assigned identity resource ID to use for the project.  If not specified, a system assigned identity will be used.',
+                   validator=_validate_user_assigned_identity)
+
+    with self.argument_context('cognitiveservices account project connection') as c:
+        c.argument('connection_name', help='Cognitive Services account connection name')
+
+    with self.argument_context('cognitiveservices account capability-host') as c:
+        c.argument('capability_host_name', help='Name of the Capability Host')
+        c.argument('description', help='Description of the capability host.')
+        c.argument('capability_host_kind',
+                   arg_type=get_enum_type(CapabilityHostKind),
+                   help='The kind of the capability host. This is used to determine the type of the capability host.',
+                   default='Agents')
+        c.argument('file',
+                   deprecate_info=c.deprecate(target="--file"))
+        c.argument(
+            "vector_store_connections",
+            options_list=["--vector-store-connections","-v"],
+            help="List of vector store (AISearch) connections names.",
+            action='append',
+        )
+        c.argument(
+            "storage_connections",
+            options_list=["--storage-connections","-s"],
+            help="List of storage connections names.",
+            action='append',
+        )
+        c.argument(
+            "ai_services_connections",
+            options_list=["--ai-services-connections","-a"],
+            help="List of Open AIServices connections names.",
+            action='append',
+        )
+
+    with self.argument_context('cognitiveservices account project capability-host') as c:
+        c.argument('capability_host_name', help='Name of the Capability Host')
+        c.argument('description', help='Description of the capability host.')
+        c.argument('capability_host_kind',
+                   arg_type=get_enum_type(CapabilityHostKind),
+                   help='The kind of the capability host. This is used to determine the type of the capability host.',
+                   default='Agents')
+
+    with self.argument_context('cognitiveservices account connection') as c:
+        c.argument('connection_name', help='Cognitive Services account connection name')
