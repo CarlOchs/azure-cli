@@ -447,6 +447,13 @@ helps['cognitiveservices account connection update'] = """
     type: command
     short-summary: Update a connection.
     examples:
-    - name: update a connection from a YAML specification file.
-      text: az cognitiveservices connection update --resource-group my-resource-group --name my-connection-name --name my-cogsvc-account
+    - name: update a connection API Key.
+      text: az cognitiveservices connection update --resource-group my-resource-group --name my-connection-name --name my-cogsvc-account --set properties.credentials.key=<new-key>
+"""
+helps['cognitiveservices account project connection'] = """
+    type: group
+    short-summary: Manage Azure Cognitive Services connection associated with a project.
+    long-summary: >
+        Azure Cognitive Services connection provides a secure way to store authentication and configuration information needed to connect and
+        interact with the external resources.
 """

@@ -177,6 +177,9 @@ def load_arguments(self, _):
     with self.argument_context('cognitiveservices account create') as c:
         c.argument('assign_identity', help='Generate and assign an Azure Active Directory Identity for this account.')
         c.argument('yes', action='store_true', help='Do not prompt for terms confirmation')
+        c.argument('allow_project_management',
+                   arg_type=get_three_state_flag(),
+                   help='Specifies whether this resource support project management.')
 
     with self.argument_context('cognitiveservices account network-rule') as c:
         c.argument('ip_address', help='IPv4 address or CIDR range.')

@@ -128,11 +128,13 @@ def load_command_table(self, _):
     with self.command_group('cognitiveservices usage', usages_type) as g:
         g.command('list', 'list')
 
-    with self.command_group('cognitiveservices account capability-host', account_capability_hosts_type, client_factory=cf_account_capability_hosts) as g:
+    with self.command_group('cognitiveservices account capability-host', 
+                            account_capability_hosts_type, 
+                            client_factory=cf_account_capability_hosts) as g:
         g.show_command('show', 'get')
         g.command('delete', 'begin_delete', supports_no_wait=True)
         g.custom_command('create', 'account_capability_host_create', supports_no_wait=True)
-        
+
     with self.command_group(
             'cognitiveservices account project', projects_type,
             client_factory=cf_projects) as g:
@@ -142,7 +144,9 @@ def load_command_table(self, _):
         g.command('list', 'list')
         g.command('update', 'begin_update')
 
-    with self.command_group('cognitiveservices account project capability-host', project_capability_hosts_type, client_factory=cf_project_capability_hosts) as g:
+    with self.command_group('cognitiveservices account project capability-host', 
+                            project_capability_hosts_type,
+                            client_factory=cf_project_capability_hosts) as g:
         g.show_command('show', 'get')
         g.command('delete', 'begin_delete')
         g.custom_command('create', 'project_capability_host_create')
@@ -150,17 +154,27 @@ def load_command_table(self, _):
     with self.command_group(
             'cognitiveservices account project connection', project_connections_type,
             client_factory=cf_project_connections) as g:
-        g.command('create', 'begin_create')
-        g.command('delete', 'begin_delete')
+        g.custom_command('create', 'project_connection_create')
+        g.command('delete', 'delete')
         g.show_command('show', 'get')
         g.command('list', 'list')
-        g.command('update', 'begin_update')
+        g.generic_update_command(
+            'update', 
+            setter_name='update',
+            setter_arg_name='connection',
+            custom_func_name='project_connection_update',
+            supports_no_wait=True)
 
     with self.command_group(
             'cognitiveservices account connection', account_connections_type,
             client_factory=cf_account_connections) as g:
-        g.command('create', 'create')
+        g.custom_command('create', 'account_connection_create')
         g.command('delete', 'delete')
         g.show_command('show', 'get')
         g.command('list', 'list')
-        g.command('update', 'update')
+        g.generic_update_command(
+            'update', 
+            setter_name='update',
+            setter_arg_name='connection',
+            custom_func_name='account_connection_update',
+            supports_no_wait=True)

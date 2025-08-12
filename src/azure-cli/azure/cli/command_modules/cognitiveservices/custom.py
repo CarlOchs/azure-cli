@@ -18,7 +18,7 @@ from azure.mgmt.cognitiveservices.models import Account as CognitiveServicesAcco
     Identity, ResourceIdentityType as IdentityType, \
     Deployment, DeploymentModel, DeploymentScaleSettings, DeploymentProperties, \
     CommitmentPlan, CommitmentPlanProperties, CommitmentPeriod, CapabilityHost, CapabilityHostProperties,\
-    Project, ProjectProperties
+    Project, ProjectProperties, ConnectionUpdateContent, ConnectionPropertiesV2BasicResource
     
 from azure.cli.command_modules.cognitiveservices._client_factory import cf_accounts, cf_resource_skus
 
@@ -95,6 +95,7 @@ def list_skus(cmd, kind=None, location=None, resource_group_name=None, account_n
 def create(
         client, resource_group_name, account_name, sku_name, kind, location, custom_domain=None,
         tags=None, api_properties=None, assign_identity=False, storage=None, encryption=None,
+        allow_project_management=False,
         yes=None):  # pylint: disable=unused-argument
     """
     Create an Azure Cognitive Services account.
@@ -108,6 +109,7 @@ def create(
         properties.api_properties = api_properties
     if custom_domain:
         properties.custom_sub_domain_name = custom_domain
+    properties.allow_project_management = allow_project_management
     params = CognitiveServicesAccount(sku=sku, kind=kind, location=location,
                                       properties=properties, tags=tags)
     if assign_identity:
@@ -300,6 +302,97 @@ def commitment_plan_create_or_update(
     plan.properties.auto_renew = auto_renew
     return client.create_or_update(resource_group_name, account_name, commitment_plan_name, plan)
 
+def _to_connection_category(ml_connection_type):
+    """
+    Convert the connection type from Azure AI ML to Azure Cognitive Services.
+    """
+    if ml_connection_type is not None and ml_connection_type != '':
+        from azure.ai.ml._utils.utils import snake_to_camel
+        # The normalization comes from the azure.ai.ml.entities._workspace.connections.WorkspaceConnection class
+        normalized_connection_type = snake_to_camel(ml_connection_type).capitalize()
+        # Try to directly instantiate the ConnectionCategory enum.
+        from azure.mgmt.cognitiveservices.models import ConnectionCategory
+        try:
+            return ConnectionCategory(normalized_connection_type)
+        except ValueError:
+            for category in ConnectionCategory:
+                if category.value.upper() == normalized_connection_type.upper():
+                    return category
+    return None
+
+def _from_ml_connection(mlconn):
+    import azure.mgmt.cognitiveservices.models as models
+    import azure.ai.ml.entities as ml_entities
+    conn = None
+    connection_category = _to_connection_category(mlconn.type)
+    if connection_category is None:
+        raise InvalidArgumentValueError(
+            f"Invalid connection type '{mlconn.type}'. ",
+            recommendation=[
+                "Verify that the connection type property is set to one of the following values:",
+                ', '.join([c.value for c in models.ConnectionCategory])]
+        )
+    match type(mlconn.credentials):
+        case ml_entities.PatTokenConfiguration:
+            conn = models.PATAuthTypeConnectionProperties()
+            conn.credentials = models.ConnectionPersonalAccessToken()
+        case ml_entities.SasTokenConfiguration:
+            conn = models.SASAuthTypeConnectionProperties()
+            conn.credentials = models.ConnectionSharedAccessSignature()
+        case ml_entities.UsernamePasswordConfiguration:
+            conn = models.UsernamePasswordAuthTypeConnectionProperties()
+            conn.credentials = models.ConnectionUsernamePassword()
+        case ml_entities.ManagedIdentityConfiguration:
+            conn = models.ManagedIdentityAuthTypeConnectionProperties()
+            conn.credentials = models.ConnectionManagedIdentity()
+        case ml_entities.ServicePrincipalConfiguration:
+            conn = models.ServicePrincipalAuthTypeConnectionProperties()
+            conn.credentials = models.ConnectionServicePrincipal()
+        case ml_entities.AccessKeyConfiguration:
+            conn = models.AccessKeyAuthTypeConnectionProperties()
+            conn.credentials = models.ConnectionAccessKey()
+        case ml_entities.ApiKeyConfiguration:
+            conn = models.ApiKeyAuthTypeConnectionProperties()
+            conn.credentials = models.ConnectionApiKey()
+        case ml_entities.NoneCredentialConfiguration:
+            conn = models.NoneAuthTypeConnectionProperties()
+        case ml_entities.AccountKeyConfiguration:
+            conn = models.AccountKeyAuthTypeConnectionProperties()
+            conn.credentials = models.ConnectionAccountKey()
+        case ml_entities.AadCredentialConfiguration:
+            conn = models.AadAuthTypeConnectionProperties()
+    if getattr(conn, 'credentials', None) is not None:
+        for k in conn.credentials.__dict__.keys():
+            v: Any | None = getattr(mlconn.credentials, k, None)
+            if v is not None:
+                setattr(conn.credentials, k, v)
+    conn.category = connection_category
+    conn.target = mlconn.target
+    conn.description = mlconn.description
+    return conn
+
+def _load_connection_from_file(
+    source: Union[str, PathLike, IO[AnyStr]],
+    params_override: Optional[List[Dict[str, Any]]] = None):
+    """
+    Load a connection from a JSON file or string.
+    """
+    from azure.ai.ml.entities._load_functions import load_connection
+    cogsvc_connection = None
+    ml_connection = None
+    try:
+        ml_connection = load_connection(
+            source=source,
+            params_override=params_override,
+        )
+        # The azure.ai.ml._workspace._ai_workspaces.connection.Connection type maps to the
+        # azure.mgmt.cognitiveservices.models.ConnectionPropertiesV2 credentialed subclass type.
+        # We need to convert it to the latter type before sending it to the API.
+    except Exception as e:
+        raise FileOperationError(f"Failed to load connection from {source}: {e}",
+                                 recommendation="Check the file path and format.")
+    cogsvc_connection = _from_ml_connection(ml_connection)
+    return cogsvc_connection
 
 def _load_capability_host_from_file(
     source: Union[str, PathLike, IO[AnyStr]],
@@ -498,3 +591,67 @@ def project_create(
         else:
             project.identity = Identity(type=IdentityType.SYSTEM_ASSIGNED)
     return client.begin_create(resource_group_name, account_name, project_name, project, polling=no_wait)
+
+
+def account_connection_create(
+    client,
+    resource_group_name,
+    account_name,
+    connection_name,
+    file,
+):
+    """
+    Create a connection for Azure Cognitive Services account.
+    """
+    account_connection_properties = _load_connection_from_file(source=file)
+    account_connection = ConnectionPropertiesV2BasicResource(properties=account_connection_properties)
+
+    return client.create(
+        resource_group_name,
+        account_name,
+        connection_name,
+        account_connection)
+
+# This function is intended to be used with the 'generic_update_command' per
+# https://github.com/Azure/azure-cli/blob/0b06b4f295766bcadaebdb7cf8fc05c7d6c9a5a8/doc/authoring_command_modules/authoring_commands.md#generic-update-commands
+def account_connection_update(
+    instance,
+):
+    """
+    Update a connection for Azure Cognitive Services account.
+    """
+    account_connection = ConnectionUpdateContent(properties=instance.properties)
+    return account_connection
+
+def project_connection_create(
+    client,
+    resource_group_name,
+    account_name,
+    project_name,
+    connection_name,
+    file,
+):
+    """
+    Create a connection for Azure Cognitive Services account.
+    """
+    project_connection_properties = _load_connection_from_file(source=file)
+    project_connection = ConnectionPropertiesV2BasicResource(properties=project_connection_properties)
+    return client.create(
+        resource_group_name,
+        account_name,
+        project_name,
+        connection_name,
+        project_connection)
+
+# This function is intended to be used with the 'generic_update_command' per
+# https://github.com/Azure/azure-cli/blob/0b06b4f295766bcadaebdb7cf8fc05c7d6c9a5a8/doc/authoring_command_modules/authoring_commands.md#generic-update-commands
+def project_connection_update(
+    instance,
+):
+    """
+    Update a connection for Azure Cognitive Services account.
+    """
+    print(f'Instance properties: {instance.properties}')
+    print(f'Instance credentials: {instance.properties.credentials}')
+    project_connection = ConnectionUpdateContent(properties=instance.properties)
+    return project_connection
