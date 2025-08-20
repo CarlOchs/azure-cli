@@ -11,7 +11,7 @@ from knack.log import get_logger
 
 from os import PathLike
 
-from azure.cli.core.azclierror import FileOperationError
+from azure.cli.core.azclierror import FileOperationError, InvalidArgumentValueError
 from azure.mgmt.cognitiveservices.models import Account as CognitiveServicesAccount, Sku, \
     VirtualNetworkRule, IpRule, NetworkRuleSet, NetworkRuleAction, \
     AccountProperties as CognitiveServicesAccountProperties, ApiProperties as CognitiveServicesAccountApiProperties, \
@@ -21,6 +21,7 @@ from azure.mgmt.cognitiveservices.models import Account as CognitiveServicesAcco
     Project, ProjectProperties, ConnectionUpdateContent, ConnectionPropertiesV2BasicResource
     
 from azure.cli.command_modules.cognitiveservices._client_factory import cf_accounts, cf_resource_skus
+from azure.cli.command_modules.cognitiveservices._utils import get_mapped_mlconn_type, get_valid_mlconn_types
 
 logger = get_logger(__name__)
 
@@ -95,7 +96,7 @@ def list_skus(cmd, kind=None, location=None, resource_group_name=None, account_n
 def create(
         client, resource_group_name, account_name, sku_name, kind, location, custom_domain=None,
         tags=None, api_properties=None, assign_identity=False, storage=None, encryption=None,
-        allow_project_management=False,
+        allow_project_management=True,
         yes=None):  # pylint: disable=unused-argument
     """
     Create an Azure Cognitive Services account.
@@ -302,73 +303,71 @@ def commitment_plan_create_or_update(
     plan.properties.auto_renew = auto_renew
     return client.create_or_update(resource_group_name, account_name, commitment_plan_name, plan)
 
-def _to_connection_category(ml_connection_type):
-    """
-    Convert the connection type from Azure AI ML to Azure Cognitive Services.
-    """
-    if ml_connection_type is not None and ml_connection_type != '':
-        from azure.ai.ml._utils.utils import snake_to_camel
-        # The normalization comes from the azure.ai.ml.entities._workspace.connections.WorkspaceConnection class
-        normalized_connection_type = snake_to_camel(ml_connection_type).capitalize()
-        # Try to directly instantiate the ConnectionCategory enum.
-        from azure.mgmt.cognitiveservices.models import ConnectionCategory
-        try:
-            return ConnectionCategory(normalized_connection_type)
-        except ValueError:
-            for category in ConnectionCategory:
-                if category.value.upper() == normalized_connection_type.upper():
-                    return category
-    return None
-
 def _from_ml_connection(mlconn):
     import azure.mgmt.cognitiveservices.models as models
     import azure.ai.ml.entities as ml_entities
     conn = None
-    connection_category = _to_connection_category(mlconn.type)
+    connection_category = get_mapped_mlconn_type(mlconn.type)
     if connection_category is None:
         raise InvalidArgumentValueError(
             f"Invalid connection type '{mlconn.type}'. ",
             recommendation=[
                 "Verify that the connection type property is set to one of the following values:",
-                ', '.join([c.value for c in models.ConnectionCategory])]
+                ', '.join(get_valid_mlconn_types())
+                ]
         )
     match type(mlconn.credentials):
         case ml_entities.PatTokenConfiguration:
-            conn = models.PATAuthTypeConnectionProperties()
-            conn.credentials = models.ConnectionPersonalAccessToken()
+            conn = models.PATAuthTypeConnectionProperties(
+                credentials=models.ConnectionPersonalAccessToken(pat=mlconn.credentials.pat))
         case ml_entities.SasTokenConfiguration:
-            conn = models.SASAuthTypeConnectionProperties()
-            conn.credentials = models.ConnectionSharedAccessSignature()
+            conn = models.SASAuthTypeConnectionProperties(
+                credentials=models.ConnectionSharedAccessSignature(sas=mlconn.credentials.sas_token))
         case ml_entities.UsernamePasswordConfiguration:
-            conn = models.UsernamePasswordAuthTypeConnectionProperties()
-            conn.credentials = models.ConnectionUsernamePassword()
+            conn = models.UsernamePasswordAuthTypeConnectionProperties(
+                credentials=models.ConnectionUsernamePassword(
+                    username=mlconn.credentials.username,
+                    password=mlconn.credentials.password))
         case ml_entities.ManagedIdentityConfiguration:
-            conn = models.ManagedIdentityAuthTypeConnectionProperties()
-            conn.credentials = models.ConnectionManagedIdentity()
+            conn = models.ManagedIdentityAuthTypeConnectionProperties(
+                credentials=models.ConnectionManagedIdentity(
+                    client_id=mlconn.credentials.client_id,
+                    resource_id=mlconn.credentials.resource_id,
+                ))
         case ml_entities.ServicePrincipalConfiguration:
-            conn = models.ServicePrincipalAuthTypeConnectionProperties()
-            conn.credentials = models.ConnectionServicePrincipal()
+            conn = models.ServicePrincipalAuthTypeConnectionProperties(
+                credentials=models.ConnectionServicePrincipal(
+                    client_id=mlconn.credentials.client_id,
+                    client_secret=mlconn.credentials.client_secret,
+                    tenant_id=mlconn.credentials.tenant_id
+                ))
         case ml_entities.AccessKeyConfiguration:
-            conn = models.AccessKeyAuthTypeConnectionProperties()
-            conn.credentials = models.ConnectionAccessKey()
+            conn = models.AccessKeyAuthTypeConnectionProperties(
+                credentials=models.ConnectionAccessKey(
+                    access_key_id=mlconn.credentials.access_key_id,
+                    secret_access_key=mlconn.credentials.secret_access_key
+                )
+            )
         case ml_entities.ApiKeyConfiguration:
-            conn = models.ApiKeyAuthTypeConnectionProperties()
-            conn.credentials = models.ConnectionApiKey()
+            conn = models.ApiKeyAuthConnectionProperties(
+                credentials=models.ConnectionApiKey(key=mlconn.credentials.key)
+            )
         case ml_entities.NoneCredentialConfiguration:
             conn = models.NoneAuthTypeConnectionProperties()
         case ml_entities.AccountKeyConfiguration:
-            conn = models.AccountKeyAuthTypeConnectionProperties()
-            conn.credentials = models.ConnectionAccountKey()
+            conn = models.AccountKeyAuthTypeConnectionProperties(
+                credentials=models.ConnectionAccountKey(
+                    key=mlconn.credentials.account_key
+                )
+            )
         case ml_entities.AadCredentialConfiguration:
-            conn = models.AadAuthTypeConnectionProperties()
-    if getattr(conn, 'credentials', None) is not None:
-        for k in conn.credentials.__dict__.keys():
-            v: Any | None = getattr(mlconn.credentials, k, None)
-            if v is not None:
-                setattr(conn.credentials, k, v)
+            conn = models.AADAuthTypeConnectionProperties()
+        case _:
+            conn = models.AADAuthTypeConnectionProperties()
     conn.category = connection_category
     conn.target = mlconn.target
     conn.description = mlconn.description
+    conn.metadata = mlconn.metadata
     return conn
 
 def _load_connection_from_file(
@@ -420,7 +419,7 @@ def _load_capability_host_from_file(
     except Exception as e:
         raise FileOperationError(f"Failed to load capability host from {source}: {e}",
                                  recommendation="Check the file path and format.")
-    return cogsvc_capability_host    
+    return cogsvc_capability_host 
 
 def _populate_capability_host(
         description=None, 

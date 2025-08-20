@@ -21,7 +21,7 @@ from azure.cli.core.decorators import Completer
 
 from azure.cli.command_modules.cognitiveservices._client_factory import cf_resource_skus
 
-from azure.mgmt.cognitiveservices.models import KeyName, DeploymentScaleType, HostingModel, CapabilityHostKind, \
+from azure.mgmt.cognitiveservices.models import KeyName, DeploymentScaleType, HostingModel, CapabilityHostKind,\
     ResourceIdentityType as IdentityType
 
 logger = get_logger(__name__)
@@ -270,6 +270,24 @@ def load_arguments(self, _):
                    arg_type=get_enum_type(CapabilityHostKind),
                    help='The kind of the capability host. This is used to determine the type of the capability host.',
                    default='Agents')
+        c.argument(
+            "vector_store_connections",
+            options_list=["--vector-store-connections","-v"],
+            help="List of vector store (AISearch) connections names.",
+            action='append',
+        )
+        c.argument(
+            "storage_connections",
+            options_list=["--storage-connections","-s"],
+            help="List of storage connections names.",
+            action='append',
+        )
+        c.argument(
+            "ai_services_connections",
+            options_list=["--ai-services-connections","-a"],
+            help="List of Open AIServices connections names.",
+            action='append',
+        )
 
     with self.argument_context('cognitiveservices account connection') as c:
         c.argument('connection_name', help='Cognitive Services account connection name')
