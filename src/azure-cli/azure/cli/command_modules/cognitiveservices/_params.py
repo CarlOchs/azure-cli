@@ -177,6 +177,16 @@ def load_arguments(self, _):
     with self.argument_context('cognitiveservices account create') as c:
         c.argument('assign_identity', help='Generate and assign an Azure Active Directory Identity for this account.')
         c.argument('yes', action='store_true', help='Do not prompt for terms confirmation')
+
+    with self.argument_context('cognitiveservices account create', arg_group="AI Services") as c:
+        c.argument('allow_project_management',
+                   arg_type=get_three_state_flag(),
+                   help='Specifies whether this resource support project management.')
+
+    with self.argument_context('cognitiveservices account update', arg_group="AI Services") as c:
+        c.argument('kind',
+                   arg_type=get_enum_type(data=['AIServices', 'OpenAI']),
+                   help='The target API name to transform the existing account into')
         c.argument('allow_project_management',
                    arg_type=get_three_state_flag(),
                    help='Specifies whether this resource support project management.')
@@ -188,7 +198,9 @@ def load_arguments(self, _):
 
     with self.argument_context('cognitiveservices account deployment') as c:
         c.argument('deployment_name', help='Cognitive Services account deployment name')
-
+        c.argument('spillover_deployment_name', 
+                   help='The name of the standard deployment to use as a spillover when the provisioned deployment is at capacity.')
+        
     with self.argument_context('cognitiveservices account deployment', arg_group='DeploymentModel') as c:
         c.argument('model_name', help='Cognitive Services account deployment model name.')
         c.argument('model_format', help='Cognitive Services account deployment model format.')
@@ -257,6 +269,12 @@ def load_arguments(self, _):
             action='append',
         )
         c.argument(
+            "thread_store_connections",
+            options_list=["--thread-store-connections","-t"],
+            help="List of thread store (e.g. CosmosDB) connections names.",
+            action='append',
+        )
+        c.argument(
             "ai_services_connections",
             options_list=["--ai-services-connections","-a"],
             help="List of Open AIServices connections names.",
@@ -280,6 +298,12 @@ def load_arguments(self, _):
             "storage_connections",
             options_list=["--storage-connections","-s"],
             help="List of storage connections names.",
+            action='append',
+        )
+        c.argument(
+            "thread_store_connections",
+            options_list=["--thread-store-connections","-t"],
+            help="List of thread store (e.g. CosmosDB) connections names.",
             action='append',
         )
         c.argument(

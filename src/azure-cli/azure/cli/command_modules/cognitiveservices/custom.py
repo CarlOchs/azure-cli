@@ -126,10 +126,12 @@ def create(
 
 
 def update(client, resource_group_name, account_name, sku_name=None, custom_domain=None,
-           tags=None, api_properties=None, storage=None, encryption=None):
+           tags=None, api_properties=None, storage=None, encryption=None,
+           allow_project_management=None, kind=None):
     """
     Update an Azure Cognitive Services account.
     """
+        
     if sku_name is None:
         sa = client.get(resource_group_name, account_name)
         sku_name = sa.sku.name
@@ -142,8 +144,14 @@ def update(client, resource_group_name, account_name, sku_name=None, custom_doma
         properties.api_properties = api_properties
     if custom_domain:
         properties.custom_sub_domain_name = custom_domain
+    if allow_project_management is not None:
+        properties.allow_project_management = allow_project_management
+        
     params = CognitiveServicesAccount(sku=sku, properties=properties, tags=tags)
 
+    if kind is not None:
+        params.kind = kind
+        
     if storage is not None:
         params.properties.user_owned_storage = json.loads(storage)
 
@@ -257,7 +265,8 @@ def deployment_begin_create_or_update(
         client, resource_group_name, account_name, deployment_name,
         model_format, model_name, model_version, model_source=None,
         sku_name=None, sku_capacity=None,
-        scale_settings_scale_type=None, scale_settings_capacity=None):
+        scale_settings_scale_type=None, scale_settings_capacity=None,
+        spillover_deployment_name=None):
     """
     Create a deployment for Azure Cognitive Services account.
     """
@@ -267,6 +276,7 @@ def deployment_begin_create_or_update(
     dpy.properties.model.format = model_format
     dpy.properties.model.name = model_name
     dpy.properties.model.version = model_version
+    dpy.properties.spillover_deployment_name = spillover_deployment_name
     if model_source is not None:
         dpy.properties.model.source = model_source
     if sku_name is not None:
@@ -426,15 +436,16 @@ def _populate_capability_host(
         capability_host_kind='Agents',
         vector_store_connections=None,
         storage_connections=None,
+        thread_store_connections=None,
         ai_services_connections=None,
         file=None,
-
 ) -> CapabilityHost:
     ch_properties = CapabilityHostProperties()
     ch_properties.description = description
     ch_properties.capability_host_kind = capability_host_kind
     ch_properties.vector_store_connections = vector_store_connections
     ch_properties.storage_connections = storage_connections
+    ch_properties.thread_storage_connections = thread_store_connections
     ch_properties.ai_services_connections = ai_services_connections
     capability_host = CapabilityHost(properties=ch_properties)
     if file is not None:
@@ -474,6 +485,7 @@ def _create_capability_host(
         capability_host_kind='Agents',
         vector_store_connections=None,
         storage_connections=None,
+        thread_store_connections=None,
         ai_services_connections=None,
         file=None,
         no_wait=False,
@@ -483,6 +495,7 @@ def _create_capability_host(
     capability_host_kind=capability_host_kind,
     vector_store_connections=vector_store_connections,
     storage_connections=storage_connections,
+    thread_store_connections=thread_store_connections,
     ai_services_connections=ai_services_connections,
     file=file,
     )
@@ -505,6 +518,7 @@ def account_capability_host_create(
         capability_host_kind='Agents',
         vector_store_connections=None,
         storage_connections=None,
+        thread_store_connections=None,
         ai_services_connections=None,
         file=None,
         no_wait=False,
@@ -521,6 +535,7 @@ def account_capability_host_create(
         capability_host_kind=capability_host_kind,
         vector_store_connections=vector_store_connections,
         storage_connections=storage_connections,
+        thread_store_connections=thread_store_connections,
         ai_services_connections=ai_services_connections,
         file=file,
         no_wait=no_wait,
@@ -536,6 +551,7 @@ def project_capability_host_create(
         capability_host_kind='Agents',
         vector_store_connections=None,
         storage_connections=None,
+        thread_store_connections=None,
         ai_services_connections=None,
         file=None,
         no_wait=False,
@@ -553,6 +569,7 @@ def project_capability_host_create(
         capability_host_kind=capability_host_kind,
         vector_store_connections=vector_store_connections,
         storage_connections=storage_connections,
+        thread_store_connections=thread_store_connections,
         ai_services_connections=ai_services_connections,
         file=file,
         no_wait=no_wait,
@@ -650,7 +667,5 @@ def project_connection_update(
     """
     Update a connection for Azure Cognitive Services account.
     """
-    print(f'Instance properties: {instance.properties}')
-    print(f'Instance credentials: {instance.properties.credentials}')
     project_connection = ConnectionUpdateContent(properties=instance.properties)
     return project_connection
