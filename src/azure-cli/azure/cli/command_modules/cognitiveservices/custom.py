@@ -147,11 +147,14 @@ def update(client, resource_group_name, account_name, sku_name=None, custom_doma
     if allow_project_management is not None:
         properties.allow_project_management = allow_project_management
         
-    params = CognitiveServicesAccount(sku=sku, properties=properties, tags=tags)
-
     if kind is not None:
         params.kind = kind
-        
+        if sku is None:
+            sku = Sku(name='S0')
+            
+    params = CognitiveServicesAccount(sku=sku, properties=properties, tags=tags)
+
+
     if storage is not None:
         params.properties.user_owned_storage = json.loads(storage)
 
@@ -591,9 +594,7 @@ def project_create(
     """
     Create a project for Azure Cognitive Services account.
     """
-    project = Project(properties=ProjectProperties())
-    project.properties.description = description
-    project.properties.display_name = display_name
+    project = Project(properties=ProjectProperties(display_name=display_name, description=description))
     project.location = location
     # If the user specifies a User Assigned Identity, we need to set the identity type accordingly.
     if identity_type is None:
