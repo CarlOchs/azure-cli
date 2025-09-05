@@ -1,0 +1,8 @@
+name: {connection_name}
+type: azure_blob
+url: https://{stg_account_name}.blob.core.windows.net
+credentials:
+  type: account_key
+  account_key: {account_key}
+container_name: {container_name}
+account_name: {stg_account_name}

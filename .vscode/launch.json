@@ -52,6 +52,33 @@
                 "WaitOnNormalExit",
                 "RedirectOutput"
             ]
+        },
+                {
+            "name": "Azure CLI Debug (Cognitive Services)",
+            "type": "debugpy",
+            "request": "launch",
+            "python": "${command:python.interpreterPath}",
+            "program": "${workspaceRoot}/src/azure-cli/azure/cli/__main__.py",
+            "cwd": "${workspaceRoot}",
+            "args": [
+                "cognitiveservices",
+                "account",
+                "project",
+                "connection",
+                "create",
+                "--name", "cjosdktest01",
+                "--resource-group", "aiservicevnext",
+                "--project-name", "cjotestsdk-proj02",
+                "--connection-name", "cjotestsdk-fsconn01",
+                "--file", "/home/cjochsjr/projects/Vienna/sdk-cli-v2/src/cli/src/machinelearningservices/azext_mlv2/tests/test_configs/connection/container_registry_managed_identity.yaml"
+            ],
+            "console": "integratedTerminal",
+            "debugOptions": [
+                "WaitOnAbnormalExit",
+                "WaitOnNormalExit",
+                "RedirectOutput"
+            ],
+            "justMyCode": false
         }
     ]
 }

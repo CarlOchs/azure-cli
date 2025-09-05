@@ -131,4 +131,4 @@ def get_valid_mlconn_types():
 def get_mapped_mlconn_type(ml_connection_type: str):
     from azure.ai.ml._utils.utils import _snake_to_camel
     normalized_name = _snake_to_camel(ml_connection_type)
-    return _ML_CONNECTION_TYPE_TO_COGNITIVE_SERVICES_CONNECTION_TYPE.get(normalized_name, None)
+    return _ML_CONNECTION_TYPE_TO_COGNITIVE_SERVICES_CONNECTION_TYPE.get(normalized_name, normalized_name)
